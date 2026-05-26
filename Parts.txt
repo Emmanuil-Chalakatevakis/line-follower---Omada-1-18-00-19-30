@@ -1,0 +1,4 @@
+Maker Pi RP2040 : Simplifying Robotics with Raspberry Pi® RP2040 (comes with driver built in)
+Smart Robot Car Chassis Kit  (comes with 2 3v-6v motors)
+tracking sensor TCRT5000 x3
+40P 20cm dupont wire male to female
