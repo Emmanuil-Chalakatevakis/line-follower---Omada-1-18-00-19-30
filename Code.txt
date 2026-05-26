@@ -1,0 +1,184 @@
+from machine import Pin, PWM
+import time
+
+# ─────────────────────────────────────────
+# SENSOR PINS
+# ─────────────────────────────────────────
+SENSOR_LEFT_PIN   = 27
+SENSOR_MID_PIN    = 17
+SENSOR_RIGHT_PIN  = 3
+
+# ─────────────────────────────────────────
+# MOTOR SPEED CALIBRATION (IMPORTANT)
+# ─────────────────────────────────────────
+LEFT_BASE_SPEED  = 0.43
+RIGHT_BASE_SPEED = 0.38  # lower this if it turns left
+
+TURN_SPEED  = 0.30
+SHARP_SPEED = 0.20
+
+INVERT_MOTORS = True
+
+# ─────────────────────────────────────────
+# MOTOR PINS
+# ─────────────────────────────────────────
+M1A_PIN = 8    # RIGHT motor
+M1B_PIN = 9
+M2A_PIN = 10   # LEFT motor
+M2B_PIN = 11
+
+PWM_FREQ = 20000
+
+# ─────────────────────────────────────────
+# INIT
+# ─────────────────────────────────────────
+sensor_left  = Pin(SENSOR_LEFT_PIN,  Pin.IN)
+sensor_mid   = Pin(SENSOR_MID_PIN,   Pin.IN)
+sensor_right = Pin(SENSOR_RIGHT_PIN, Pin.IN)
+
+m1a = PWM(Pin(M1A_PIN)); m1a.freq(PWM_FREQ)
+m1b = PWM(Pin(M1B_PIN)); m1b.freq(PWM_FREQ)
+m2a = PWM(Pin(M2A_PIN)); m2a.freq(PWM_FREQ)
+m2b = PWM(Pin(M2B_PIN)); m2b.freq(PWM_FREQ)
+
+# ─────────────────────────────────────────
+# MOTOR CONTROL
+# ─────────────────────────────────────────
+def _duty(speed):
+    return int(max(0.0, min(1.0, abs(speed))) * 65535)
+
+def right_motor(speed):
+    if INVERT_MOTORS:
+        speed = -speed
+
+    if speed > 0:
+        m1a.duty_u16(_duty(speed))
+        m1b.duty_u16(0)
+    elif speed < 0:
+        m1a.duty_u16(0)
+        m1b.duty_u16(_duty(-speed))
+    else:
+        m1a.duty_u16(0)
+        m1b.duty_u16(0)
+
+def left_motor(speed):
+    if INVERT_MOTORS:
+        speed = -speed
+
+    if speed > 0:
+        m2a.duty_u16(_duty(speed))
+        m2b.duty_u16(0)
+    elif speed < 0:
+        m2a.duty_u16(0)
+        m2b.duty_u16(_duty(-speed))
+    else:
+        m2a.duty_u16(0)
+        m2b.duty_u16(0)
+
+def stop():
+    right_motor(0)
+    left_motor(0)
+
+# ─────────────────────────────────────────
+# MOVEMENT
+# ─────────────────────────────────────────
+def forward():
+    left_motor(RIGHT_BASE_SPEED)
+    right_motor(LEFT_BASE_SPEED)
+
+def turn_left():
+    left_motor(RIGHT_BASE_SPEED)
+    right_motor(TURN_SPEED)
+
+def turn_right():
+    left_motor(TURN_SPEED)
+    right_motor(LEFT_BASE_SPEED)
+
+def sharp_left():
+    left_motor(RIGHT_BASE_SPEED)
+    right_motor(-SHARP_SPEED)
+
+def sharp_right():
+    left_motor(-SHARP_SPEED)
+    right_motor(LEFT_BASE_SPEED)
+
+# ─────────────────────────────────────────
+# SENSORS
+# ─────────────────────────────────────────
+def read_sensors():
+    """
+    Returns (left, mid, right) as booleans.
+    True = sensor is over the BLACK line.
+    Tracker Sensor: LOW output = black detected.
+    """
+    L = (sensor_left.value()  == 0)
+    M = (sensor_mid.value()   == 0)
+    R = (sensor_right.value() == 0)
+    return L, M, R
+ 
+# ─────────────────────────────────────────────────────────
+# MAIN LINE FOLLOWER LOOP
+# ─────────────────────────────────────────────────────────
+ 
+def run():
+    print("Line Follower ready!")
+    print("Place robot on line, then it will start in 2 seconds...")
+    time.sleep(2)
+    print("GO!")
+ 
+    last_seen = "mid"   # Used for line-lost recovery
+ 
+    while True:
+        L, M, R = read_sensors()
+ 
+        # ── Centred on line ──────────────────────────────
+        if not L and M and not R:
+            forward()
+            last_seen = "mid"
+ 
+        # ── Drifting right (left sensors on line) ────────
+        elif L and M and not R:
+            turn_left()
+            last_seen = "left"
+ 
+        # ── Drifting left (right sensors on line) ────────
+        elif not L and M and R:
+            turn_right()
+            last_seen = "right"
+ 
+        # ── Sharp left needed ────────────────────────────
+        elif L and not M and not R:
+            sharp_left()
+            last_seen = "left"
+ 
+        # ── Sharp right needed ───────────────────────────
+        elif not L and not M and R:
+            sharp_right()
+            last_seen = "right"
+ 
+        # ── All sensors on line (wide section/cross) ─────
+        elif L and M and R:
+            stop()
+ 
+        # ── Both outer sensors (possible crossroad) ──────
+        elif L and not M and R:
+            forward()
+ 
+        # ── No sensor on line → recovery mode ───────────
+        else:  # not L and not M and not R
+            if last_seen == "left":
+                sharp_left()
+            elif last_seen == "right":
+                sharp_right()
+            else:
+                forward()   # Lost straight, keep going
+ 
+        time.sleep_ms(8)  # 8ms loop = ~125Hz response rate
+# ─────────────────────────────────────────
+# START
+# ─────────────────────────────────────────
+try:
+    run()
+except KeyboardInterrupt:
+    stop()
+    print("Stopped")
